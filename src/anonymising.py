@@ -103,7 +103,7 @@ def process_csv(input_path: str, output_path: str, col_to_anonymize: Optional[st
 
 
 def main():
-    BASE_DIR = "SeroProjectCode/SeroProjectCode/data"
+    BASE_DIR = "data"
     RAW_DIR = os.path.join(BASE_DIR, "proccessed")   # keep your folder name as-is
     ANO_DIR = os.path.join(BASE_DIR, "Anonymised")
 

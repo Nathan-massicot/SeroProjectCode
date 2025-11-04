@@ -39,8 +39,7 @@ Notes:
 
 
 TARGET_BASENAMES = {
-    "careplan",
-    "obsvervations",            # keep legacy misspelling to match existing files
+    "careplan",            # keep legacy misspelling to match existing files
     "observation",             # NEW: also drop date/time for 'observation'
     "questionnaireresponses",
     "supportcareplan",
