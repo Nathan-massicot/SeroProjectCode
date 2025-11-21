@@ -1,24 +1,11 @@
 [project]
 name = "seroprojectcode"
 version = "0.1.0"
-description = ""
-authors = [
-    {name = "nathan massicot",email = "nathan.massicot@efrei.net"}
-]
+description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
-    "pandas (>=2.2,<3.0)",
-    "numpy (>=1.26,<2.0)",
-    "matplotlib (>=3.8,<4.0)",
-    "seaborn (>=0.13.2,<0.14.0)",
-    "jupyter (>=1.1.1,<2.0.0)",
-    "pandera (>=0.20,<0.21)",
-    "pyarrow (>=17,<18)",
-    "python-dateutil (>=2.9,<3.0)"
+    "pandas>=2.3.3",
+    "torch>=2.9.1",
+    "transformers>=4.57.1",
 ]
-
-
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
