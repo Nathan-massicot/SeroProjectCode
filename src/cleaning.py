@@ -22,11 +22,12 @@ Usage:
 What it does:
 - Loads every *.csv in --raw-dir
 - Cleans each file:
-  1) Trims whitespace-only cells -> NaN
-  2) Drops fully-empty rows
-  3) Drops duplicate rows
-  4) Drops rows with ANY missing values
-  5) For files whose name matches one of:
+  - Normalise the separatio to coma 
+  - Trims whitespace-only cells -> NaN
+  - Drops fully-empty rows
+  - Drops duplicate rows
+  - Drops rows with ANY missing values
+  - For files whose name matches one of:
         ['careplan','obsvervation','observations','questionnaireresponses','supportcareplan']
      drops columns named exactly 'date' and 'time' (case-insensitive)
 - Saves cleaned CSVs to --processed-dir (created if missing)
@@ -40,9 +41,10 @@ Notes:
 
 TARGET_BASENAMES = {
     "careplan",            # keep legacy misspelling to match existing files
-    "observation",             # NEW: also drop date/time for 'observation'
+    "observations",             # NEW: also drop date/time for 'observation'
     "questionnaireresponses",
     "supportcareplan",
+    "events"
 }
 
 DROP_COLS = {"date", "time"}  # exact names, case-insensitive
@@ -188,9 +190,11 @@ def clean_dataframe(df: pd.DataFrame, drop_date_time: bool) -> Dict[str, int | L
     df_nodup = df_noempty.drop_duplicates()
     duplicates_removed = len(df_noempty) - len(df_nodup)
 
-    # Drop rows with ANY missing values
-    df_nomiss = df_nodup.dropna(how="any")
-    missing_rows_removed = len(df_nodup) - len(df_nomiss)
+    # NEW: Drop rows with STRICTLY MORE than 2 missing values
+    na_per_row = df_nodup.isna().sum(axis=1)
+    mask_keep = na_per_row <= 2
+    df_nomiss = df_nodup[mask_keep].copy()
+    missing_rows_removed = int((~mask_keep).sum())
 
     # Optionally drop 'date' and 'time' columns (exact names, case-insensitive)
     dropped_columns: List[str] = []
