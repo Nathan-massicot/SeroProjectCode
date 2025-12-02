@@ -9,7 +9,6 @@ st.set_page_config(
     layout="wide"
 )
 
-
 # ---------- HELPERS TEMPS / PÉRIODES ----------
 
 def to_utc(series):
@@ -138,20 +137,22 @@ if "data_loaded" not in st.session_state:
 
 st.title("SERO – Load anonymised data")
 
-st.write(
-    "Merci de sélectionner en une fois les **5 fichiers CSV anonymisés** :  \n"
-    "- `SERO-events.csv`\n"
-    "- `SERO-careplan.csv`\n"
-    "- `SERO-SupportCareplan.csv`\n"
-    "- `SERO-Observations.csv`\n"
-    "- `SERO-QuestionnaireResponses.csv`"
+st.markdown(
+    "Please select all **5 CSV files** <u>at once</u>:",
+    unsafe_allow_html=True,
 )
 
+# 👉 SIDEBAR : UNIQUEMENT SI LES DONNÉES SONT CHARGÉES
 if st.session_state.data_loaded and st.session_state.sero_data is not None:
+    with st.sidebar:
+        st.success("Data loaded ✅")
+        if st.button("Go to Analyse overview", key="go_analyse_sidebar"):
+            st.switch_page("pages/Analyse_Overview.py")
+
     data = st.session_state.sero_data
     st.success("Data already loaded ✅")
     st.write(f"Total interactions in dataset: **{len(data['all_interactions'])}**")
-    st.write("You can open the **Analyse** page from the sidebar.")
+    st.write("You can open the **Analyse** page from the sidebar button or navigation.")
 
 st.subheader("Upload anonymised CSV files")
 
@@ -169,11 +170,11 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True,
 )
 
-# Petit résumé des fichiers uploadés
 if uploaded_files:
     st.write("Uploaded files:")
     for f in uploaded_files:
         st.write(f"- `{f.name}`")
+
 
 def validate_files(uploaded_files):
     """Vérifie qu'on a exactement les 5 fichiers attendus."""
@@ -218,8 +219,7 @@ if st.button("Process uploaded files"):
             st.session_state.sero_data = data
             st.session_state.data_loaded = True
 
-            # 🔁 Redirection directe vers la page Analyse
-            # 👉 ADAPTE le chemin ci-dessous selon le nom réel de ta page d'analyse
+            st.success("Data loaded and processed successfully ✅ Redirecting to analysis...")
             st.switch_page("pages/Analyse_Overview.py")
 
         except Exception as e:
