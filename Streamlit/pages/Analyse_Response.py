@@ -1,4 +1,4 @@
-# Streamlit/pages/2_Future_page_1.py
+# Streamlit/pages/
 
 import streamlit as st
 
