@@ -90,14 +90,6 @@ else:
         t_series["months"] = delta.dt.total_seconds() / (60 * 60 * 24 * 30)
         t_series["weeks"] = delta.dt.total_seconds() / (60 * 60 * 24 * 7)
 
-        # DEBUG: show a quick summary of the retention distribution
-        with st.expander("Debug – retention distribution (months & weeks)"):
-            st.write(t_series[["first", "last", "months", "weeks"]].head())
-            st.write("Months distribution:")
-            st.write(t_series["months"].describe())
-            st.write("Weeks distribution:")
-            st.write(t_series["weeks"].describe())
-
 # ---------------------------------------------------------------------
 # 1.a Early retention – distribution by week (first 10 weeks)
 # ---------------------------------------------------------------------

@@ -9,7 +9,7 @@ Les données sont fournies sous forme de fichiers CSV (non versionnés dans ce r
 
 ### 1. Prérequis
 - Python **3.12+**
-- [Poetry 2.x](https://python-poetry.org/docs/#installation) (idéalement via `pipx`)
+- [Poetry 2.x](https://python-poetry.org/docs/#installation) (idéalement via `UV`)
 
 Vérifier l’installation :
 ```bash
