@@ -8,7 +8,7 @@ import zipfile
 import os
 import sys
 
-# S'assurer que le dossier racine du projet est dans le PYTHONPATH
+# Ensure the project root folder is in PYTHONPATH so imports from src/ work.
 CURRENT_DIR = os.path.dirname(__file__)
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
 if PROJECT_ROOT not in sys.path:
@@ -17,22 +17,26 @@ if PROJECT_ROOT not in sys.path:
 from src.cleaning import clean_dataframe, should_drop_date_time
 from src.anonymising import anonymize_text
 
-# ---------- CONFIG GÉNÉRALE ----------
+ # ---------------------------------------------------------------------
+# GENERAL CONFIGURATION
+# ---------------------------------------------------------------------
 st.set_page_config(
     page_title="SERO – Load data",
     layout="wide"
 )
 
-# ---------- CONSTANTES & HELPERS CSV / CLEANING / ANONYMISATION ----------
+ # ---------------------------------------------------------------------
+# CONSTANTS & HELPERS FOR CSV / CLEANING / ANONYMISATION
+# ---------------------------------------------------------------------
 
 NA_VALUES = ["", " ", "NA", "NaN", "null", "Null", "NULL", "None", "none"]
 
 
 def create_zip_from_tables(tables_dict: dict, suffix: str) -> bytes:
     """
-    Crée un ZIP en mémoire contenant un CSV par table.
-    tables_dict : {logical_name: DataFrame}
-    suffix : ajouté au nom du fichier (ex: 'clean' ou 'anonymised')
+    Create an in-memory ZIP archive containing one CSV per table.
+    tables_dict: mapping {logical_name: DataFrame}
+    suffix: appended to each file name (e.g. 'clean' or 'anonymised')
     """
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -45,7 +49,7 @@ def create_zip_from_tables(tables_dict: dict, suffix: str) -> bytes:
 
 
 def detect_delimiter_from_bytes(raw_bytes: bytes) -> str:
-    """Détecte un délimiteur probable à partir d'un échantillon de bytes."""
+    """Detect a probable delimiter from a small byte sample of the file."""
     try:
         sample = raw_bytes[:256_000].decode("utf-8", errors="ignore")
     except Exception:
@@ -65,11 +69,11 @@ def detect_delimiter_from_bytes(raw_bytes: bytes) -> str:
 
 def read_and_clean_uploaded_csv(uploaded_file, logical_name: str):
     """
-    Lit un fichier CSV uploadé (Streamlit UploadedFile), détecte le délimiteur,
-    charge en DataFrame, applique le cleaning (clean_dataframe) en mémoire,
-    et retourne (df_clean, metrics).
+    Read an uploaded CSV file (Streamlit UploadedFile), detect the delimiter,
+    load it as a DataFrame, apply cleaning (clean_dataframe) in memory,
+    and return (df_clean, metrics).
     """
-    # Lire tous les bytes une fois
+    # Read all bytes once
     raw_bytes = uploaded_file.read()
     delim = detect_delimiter_from_bytes(raw_bytes)
 
@@ -86,7 +90,7 @@ def read_and_clean_uploaded_csv(uploaded_file, logical_name: str):
         quoting=csv.QUOTE_MINIMAL,
     )
 
-    # Décider si on drope les colonnes date/time en fonction du nom logique
+    # Decide whether to drop date/time columns based on the logical file name
     stem_lower = logical_name.lower()
     drop_dt = should_drop_date_time(stem_lower)
 
@@ -101,8 +105,8 @@ def anonymize_column_with_progress(
     progress_state: dict,
 ) -> pd.DataFrame:
     """
-    Anonymise une colonne texte ligne par ligne avec mise à jour de la barre
-    de progression. progress_state doit contenir :
+    Anonymise a text column row by row while updating the progress bar.
+    progress_state must contain:
         { "rows_done": int, "total_rows": int }
     """
     if col not in df.columns:
@@ -112,8 +116,8 @@ def anonymize_column_with_progress(
     if n == 0:
         return df
 
-    # Pour éviter de spammer Streamlit, on limite le nombre d'updates
-    step = max(1, n // 50)  # max ~50 updates par colonne
+    # To avoid spamming Streamlit, we limit the number of UI updates
+    step = max(1, n // 50)  # max ~50 updates per column
 
     for i, idx in enumerate(df.index):
         text = df.at[idx, col]
@@ -122,10 +126,10 @@ def anonymize_column_with_progress(
 
         progress_state["rows_done"] += 1
 
-        # Mise à jour de la barre seulement tous les "step"
+        # Update the progress bar only every "step" rows
         if i % step == 0:
             frac_rows = progress_state["rows_done"] / max(1, progress_state["total_rows"])
-            # Hybrid progress : 0–0.3 = lecture/cleaning, 0.3–1.0 = anonymisation
+            # Hybrid progress: 0–0.3 = reading/cleaning, 0.3–1.0 = anonymisation
             frac = 0.3 + 0.7 * frac_rows
             progress_bar.progress(min(1.0, frac))
 
@@ -134,10 +138,10 @@ def anonymize_column_with_progress(
 
 def process_uploaded_files_with_cleaning_and_anonymisation(uploaded_files_dict):
     """
-    Orchestration complète :
-      1) Lecture + cleaning en mémoire (0.0 -> 0.3)
-      2) Anonymisation des colonnes sensibles (0.3 -> 1.0)
-    uploaded_files_dict : mapping
+    Full pipeline for uploaded CSV files:
+      1) In-memory reading + cleaning (0.0 -> 0.3 of the progress bar)
+      2) Anonymisation of sensitive text columns (0.3 -> 1.0)
+    uploaded_files_dict: mapping
         {
             "events": UploadedFile,
             "careplan": UploadedFile,
@@ -145,7 +149,7 @@ def process_uploaded_files_with_cleaning_and_anonymisation(uploaded_files_dict):
             "observations": UploadedFile,
             "qr": UploadedFile,
         }
-    Retourne un tuple (cleaned_before_anon, anonymised) où chaque élément est un dict :
+    Returns a tuple (cleaned_before_anon, anonymised) where each element is a dict:
         {
             "events": df,
             "careplan": df,
@@ -157,7 +161,7 @@ def process_uploaded_files_with_cleaning_and_anonymisation(uploaded_files_dict):
     progress_bar = st.progress(0)
     status = st.empty()
 
-    # ----- 1) Lecture + cleaning (0.0 -> 0.3) -----
+    # ----- 1) Reading + cleaning (0.0 -> 0.3) -----
     status.markdown("🔄 Cleaning CSV files...")
     cleaned = {}
 
@@ -167,7 +171,7 @@ def process_uploaded_files_with_cleaning_and_anonymisation(uploaded_files_dict):
     for i, key in enumerate(logical_order, start=1):
         f = uploaded_files_dict[key]
 
-        # IMPORTANT : remettre le pointeur au début au cas où
+        # IMPORTANT: reset the file pointer to the beginning, just in case
         try:
             f.seek(0)
         except Exception:
@@ -180,7 +184,7 @@ def process_uploaded_files_with_cleaning_and_anonymisation(uploaded_files_dict):
         progress_bar.progress(frac)
         status.markdown(f"✅ Cleaned **{f.name}** ({i}/{total_files})")
 
-    # Garder une copie des données nettoyées AVANT anonymisation
+    # Keep a copy of the cleaned data BEFORE anonymisation
     cleaned_before_anon = {k: v.copy(deep=True) for k, v in cleaned.items()}
 
     # ----- 2) Anonymisation (0.3 -> 1.0) -----
@@ -192,7 +196,7 @@ def process_uploaded_files_with_cleaning_and_anonymisation(uploaded_files_dict):
 
     total_rows = len(careplan_df) + len(support_df) + len(qr_df)
     if total_rows <= 0:
-        # Pas de texte à anonymiser -> on passe directement à 100%
+        # No text to anonymise -> go directly to 100%
         progress_bar.progress(1.0)
         status.markdown("ℹ️ No rows to anonymise. Building SERO dataset...")
         cleaned["careplan"] = careplan_df
@@ -232,7 +236,7 @@ def process_uploaded_files_with_cleaning_and_anonymisation(uploaded_files_dict):
         cleaned["supportcareplan"] = support_df
         cleaned["qr"] = qr_df
 
-        # Fin de la phase d'anonymisation -> barre à 100%
+        # End of anonymisation phase -> set progress bar to 100%
         progress_bar.progress(1.0)
         status.markdown("✅ Anonymisation complete. Building SERO dataset...")
 
@@ -246,10 +250,12 @@ def process_uploaded_files_with_cleaning_and_anonymisation(uploaded_files_dict):
     return cleaned_before_anon, anonymised
 
 
-# ---------- HELPERS TEMPS / PÉRIODES ----------
+# ---------------------------------------------------------------------
+# TIME / PERIOD HELPERS
+# ---------------------------------------------------------------------
 
 def to_utc(series):
-    """Convertit une série datetime en timezone UTC (naïve -> UTC)."""
+    """Convert a datetime-like Series to UTC timezone (naive -> UTC)."""
     dt = pd.to_datetime(series, errors="coerce")
     if getattr(dt.dt, "tz", None) is None:
         dt = dt.dt.tz_localize("UTC")
@@ -260,10 +266,10 @@ def to_utc(series):
 
 def day_period_from_hour(h: int) -> str:
     """
-    Coupe la journée en 3 blocs simples:
-    - Morning : 05h–12h
-    - Afternoon : 12h–18h
-    - Evening/Night : 18h–05h
+    Split the day into 3 simple time blocks:
+    - Morning: 05:00–12:00
+    - Afternoon: 12:00–18:00
+    - Evening/Night: 18:00–05:00
     """
     if 5 <= h < 12:
         return "Morning"
@@ -274,7 +280,7 @@ def day_period_from_hour(h: int) -> str:
 
 
 def add_time_features(df: pd.DataFrame, col: str) -> pd.DataFrame:
-    """Ajoute timestamp UTC, date, weekday, hour, day_period à partir d'une colonne datetime."""
+    """Add UTC timestamp, date, weekday, hour, and day_period based on a datetime column."""
     df = df.copy()
     df["timestamp"] = to_utc(df[col])
     df["date"] = df["timestamp"].dt.date
@@ -285,14 +291,16 @@ def add_time_features(df: pd.DataFrame, col: str) -> pd.DataFrame:
 
 
 def is_suicidal_answer(text) -> bool:
-    """Heuristique simple: flag si la réponse contient 'suizid' ou 'suicide' (DE/EN)."""
+    """Simple heuristic: flag answer if it contains 'suizid' or 'suicide' (DE/EN)."""
     if not isinstance(text, str):
         return False
     low = text.lower()
     return ("suizid" in low) or ("suicide" in low)
 
 
-# ---------- CONSTRUCTION DU DATASET SERO À PARTIR DES DF ----------
+# ---------------------------------------------------------------------
+# BUILD SERO DATASET FROM DATAFRAMES
+# ---------------------------------------------------------------------
 
 def build_sero_dataset(
     events: pd.DataFrame,
@@ -301,26 +309,26 @@ def build_sero_dataset(
     observations: pd.DataFrame,
     qr: pd.DataFrame,
 ):
-    # Ajout features temporelles
+    # Add time-based features to each table
     events = add_time_features(events, "event_time")
     careplan = add_time_features(careplan, "dateTime")
     supportcareplan = add_time_features(supportcareplan, "dateTime")
     observations = add_time_features(observations, "dateTime")
     qr = add_time_features(qr, "dateTime")
 
-    # Harmoniser les identifiants "utilisateur"
+    # Harmonise user identifiers across tables
     careplan = careplan.rename(columns={"subject": "iduser"})
     supportcareplan = supportcareplan.rename(columns={"subject": "iduser"})
     observations = observations.rename(columns={"subject": "iduser"})
     qr = qr.rename(columns={"subject": "iduser"})
 
-    # Flag des réponses avec idées suicidaires
+    # Flag questionnaire answers that contain suicidal ideation
     if "answer" in qr.columns:
         qr["is_suicidal"] = qr["answer"].apply(is_suicidal_answer)
     else:
         qr["is_suicidal"] = False
 
-    # Construction d'une table "interaction" globale
+    # Build a global "interaction" table combining all sources
     e = events.copy()
     e["source"] = "event"
     e["kind"] = e["event_category"].astype(str) + "/" + e["event_name"].astype(str)
@@ -361,7 +369,10 @@ def build_sero_dataset(
     }
 
 
-# ---------- SESSION STATE ----------
+# ---------------------------------------------------------------------
+# SESSION STATE
+# ---------------------------------------------------------------------
+# Store the processed SERO dataset and a flag indicating whether data is loaded.
 
 if "sero_data" not in st.session_state:
     st.session_state.sero_data = None
@@ -370,7 +381,9 @@ if "data_loaded" not in st.session_state:
     st.session_state.data_loaded = False
 
 
-# ---------- UI : PAGE LOAD DATA (MULTI-UPLOAD) ----------
+# ---------------------------------------------------------------------
+# UI: LOAD DATA PAGE (MULTI-UPLOAD)
+# ---------------------------------------------------------------------
 
 st.title("SERO – Load anonymised data")
 
@@ -379,12 +392,12 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# 👉 SIDEBAR : UNIQUEMENT SI LES DONNÉES SONT CHARGÉES
+# 👉 SIDEBAR: ONLY SHOWN WHEN DATA IS ALREADY LOADED
 if st.session_state.data_loaded and st.session_state.sero_data is not None:
     with st.sidebar:
         st.success("Data loaded ✅")
         if st.button("Go to Analyse overview", key="go_analyse_sidebar"):
-            st.switch_page("pages/Analyse_Overview.py")
+            st.switch_page("pages/1 Usage Overview.py")
 
     data = st.session_state.sero_data
     st.success("Data already loaded ✅")
@@ -407,6 +420,23 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True,
 )
 
+# If ZIP files were already created in a previous run, always show download buttons
+# so the user can download both clean and anonymised CSVs even after a rerun.
+if "clean_zip" in st.session_state and "anon_zip" in st.session_state:
+    st.subheader("Download processed CSV files")
+    st.download_button(
+        "⬇️ Download cleaned CSVs (before anonymisation)",
+        data=st.session_state.clean_zip,
+        file_name="sero_cleaned.zip",
+        mime="application/zip",
+    )
+    st.download_button(
+        "⬇️ Download anonymised CSVs",
+        data=st.session_state.anon_zip,
+        file_name="sero_anonymised.zip",
+        mime="application/zip",
+    )
+
 if uploaded_files:
     st.write("Uploaded files:")
     for f in uploaded_files:
@@ -414,7 +444,7 @@ if uploaded_files:
 
 
 def validate_files(uploaded_files):
-    """Vérifie qu'on a exactement les 5 fichiers attendus."""
+    """Check that we have exactly the 5 expected CSV files."""
     if not uploaded_files:
         return False, "No file uploaded.", None
 
@@ -438,7 +468,7 @@ if st.button("Process uploaded files"):
         st.error(msg)
     else:
         try:
-            # Construire un dict pour l'orchestrateur (pipeline temps réel)
+            # Build a dict for the orchestrator (real-time pipeline)
             uploaded_dict = {
                 "events": by_name["SERO-events.csv"],
                 "careplan": by_name["SERO-careplan.csv"],
@@ -455,7 +485,7 @@ if st.button("Process uploaded files"):
             observations_df = anonymised_tables["observations"]
             qr_df = anonymised_tables["qr"]
 
-            # Construction du dataset SERO (inchangé, mais avec données nettoyées + anonymisées)
+            # Build the SERO dataset (same structure, but with cleaned + anonymised data)
             data = build_sero_dataset(
                 events_df,
                 careplan_df,
@@ -469,26 +499,19 @@ if st.button("Process uploaded files"):
             st.session_state.cleaned_tables = cleaned_tables
             st.session_state.anonymised_tables = anonymised_tables
 
-            # Création des ZIP téléchargeables
+            # Create ZIP archives for download (cleaned and anonymised tables)
             clean_zip = create_zip_from_tables(cleaned_tables, "clean")
             anon_zip = create_zip_from_tables(anonymised_tables, "anonymised")
 
+            # Store ZIPs in session_state so download buttons remain available
+            # even after Streamlit reruns (e.g. after one download).
+            st.session_state.clean_zip = clean_zip
+            st.session_state.anon_zip = anon_zip
+
             st.success("Data cleaned, anonymised and processed successfully ✅")
-            st.download_button(
-                "⬇️ Download cleaned CSVs (before anonymisation)",
-                data=clean_zip,
-                file_name="sero_cleaned.zip",
-                mime="application/zip",
-            )
-            st.download_button(
-                "⬇️ Download anonymised CSVs",
-                data=anon_zip,
-                file_name="sero_anonymised.zip",
-                mime="application/zip",
-            )
-            st.info("You can now go to the Analyse overview page using the sidebar or the button below.")
+            st.info("You can now download the processed CSVs and go to the Analyse overview page using the sidebar or the button below.")
             if st.button("Go to Analyse overview", key="go_analyse_after_load"):
-                st.switch_page("pages/Analyse_Overview.py")
+                st.switch_page("pages/Page1_UsageOverview.py")
 
         except Exception as e:
             st.error(f"Error while cleaning/anonymising files: {e}")
