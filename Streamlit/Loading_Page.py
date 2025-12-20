@@ -7,6 +7,7 @@ import csv
 import zipfile
 import os
 import sys
+import re
 
 # Ensure the project root folder is in PYTHONPATH so imports from src/ work.
 CURRENT_DIR = os.path.dirname(__file__)
@@ -406,13 +407,54 @@ if st.session_state.data_loaded and st.session_state.sero_data is not None:
 
 st.subheader("Upload anonymised CSV files")
 
-expected_files = {
-    "SERO-events.csv": "events",
-    "SERO-careplan.csv": "careplan",
-    "SERO-SupportCareplan.csv": "supportcareplan",
-    "SERO-Observations.csv": "observations",
-    "SERO-QuestionnaireResponses.csv": "qr",
+# ---------------------------------------------------------------------
+# EXPECTED FILES (FLEXIBLE MATCHING)
+# ---------------------------------------------------------------------
+# We match files by a "slug" derived from the filename (case-insensitive
+# and ignoring separators like '-' and '_'). This makes the uploader tolerant
+# to naming variants such as:
+#   - SERO-SupportCareplan.csv / SERO-Support-Careplan.csv
+#   - SERO-events.csv / sero_events.csv
+
+EXPECTED_FILES = {
+    "events": {
+        "slugs": {"seroevents", "events"},
+        "examples": ["SERO-events.csv", "sero_events.csv"],
+    },
+    "careplan": {
+        "slugs": {"serocareplan", "careplan"},
+        "examples": ["SERO-careplan.csv", "SERO-Careplan.csv"],
+    },
+    "supportcareplan": {
+        "slugs": {"serosupportcareplan", "supportcareplan"},
+        "examples": ["SERO-SupportCareplan.csv", "SERO-Support-Careplan.csv"],
+    },
+    "observations": {
+        "slugs": {"seroobservations", "observations"},
+        "examples": ["SERO-Observations.csv"],
+    },
+    "qr": {
+        "slugs": {"seroquestionnaireresponses", "questionnaireresponses"},
+        "examples": ["SERO-QuestionnaireResponses.csv"],
+    },
 }
+
+# Build a reverse lookup slug -> logical key
+SLUG_TO_KEY = {}
+for _key, _cfg in EXPECTED_FILES.items():
+    for _slug in _cfg["slugs"]:
+        if _slug in SLUG_TO_KEY and SLUG_TO_KEY[_slug] != _key:
+            raise ValueError(f"Ambiguous slug mapping for '{_slug}': {SLUG_TO_KEY[_slug]} vs {_key}")
+        SLUG_TO_KEY[_slug] = _key
+
+
+def filename_slug(name: str) -> str:
+    """Return a canonical slug for filename matching (ignore case and separators)."""
+    base = os.path.basename(name)
+    stem, _ext = os.path.splitext(base)
+    stem = stem.lower().strip()
+    # Remove any non-alphanumeric characters (treat -, _, spaces, etc. as equivalent)
+    return re.sub(r"[^a-z0-9]+", "", stem)
 
 uploaded_files = st.file_uploader(
     "Select the 5 CSV files",
@@ -444,21 +486,45 @@ if uploaded_files:
 
 
 def validate_files(uploaded_files):
-    """Check that we have exactly the 5 expected CSV files."""
+    """Check that we have the 5 expected CSV files (flexible name matching)."""
     if not uploaded_files:
         return False, "No file uploaded.", None
 
-    by_name = {f.name: f for f in uploaded_files}
+    matched = {}
+    unknown = []
+    duplicates = []
 
-    missing = [fn for fn in expected_files.keys() if fn not in by_name]
-    extra = [fn for fn in by_name.keys() if fn not in expected_files.keys()]
+    for f in uploaded_files:
+        slug = filename_slug(f.name)
+        key = SLUG_TO_KEY.get(slug)
+        if key is None:
+            unknown.append(f.name)
+            continue
+
+        if key in matched:
+            duplicates.append((key, matched[key].name, f.name))
+            continue
+
+        matched[key] = f
+
+    missing = [k for k in EXPECTED_FILES.keys() if k not in matched]
+
+    if duplicates:
+        details = "; ".join([f"{k}: '{a}' and '{b}'" for k, a, b in duplicates])
+        return False, f"Duplicate files detected for the same dataset: {details}", None
 
     if missing:
-        return False, f"Missing required files: {', '.join(missing)}", None
-    if extra:
-        return False, f"Unexpected files uploaded: {', '.join(extra)}", None
+        # Provide friendly examples
+        examples = []
+        for k in missing:
+            ex = ", ".join(EXPECTED_FILES[k]["examples"])
+            examples.append(f"{k} (e.g. {ex})")
+        return False, f"Missing required files: {', '.join(examples)}", None
 
-    return True, "", by_name
+    if unknown:
+        return False, f"Unexpected/unknown files uploaded: {', '.join(unknown)}", None
+
+    return True, "", matched
 
 
 if st.button("Process uploaded files"):
@@ -468,13 +534,13 @@ if st.button("Process uploaded files"):
         st.error(msg)
     else:
         try:
-            # Build a dict for the orchestrator (real-time pipeline)
+            # by_name is actually a mapping {logical_key: UploadedFile}
             uploaded_dict = {
-                "events": by_name["SERO-events.csv"],
-                "careplan": by_name["SERO-careplan.csv"],
-                "supportcareplan": by_name["SERO-SupportCareplan.csv"],
-                "observations": by_name["SERO-Observations.csv"],
-                "qr": by_name["SERO-QuestionnaireResponses.csv"],
+                "events": by_name["events"],
+                "careplan": by_name["careplan"],
+                "supportcareplan": by_name["supportcareplan"],
+                "observations": by_name["observations"],
+                "qr": by_name["qr"],
             }
 
             cleaned_tables, anonymised_tables = process_uploaded_files_with_cleaning_and_anonymisation(uploaded_dict)
