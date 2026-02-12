@@ -168,9 +168,7 @@ def _load_sentiment_pipeline():
     try:
         from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
     except Exception as e:
-        raise RuntimeError(
-            "Missing dependency: `transformers`. Install it in your environment (e.g. `pip install transformers torch`)."
-        ) from e
+        raise RuntimeError("Transformers library is required to load the sentiment model. Please install it via `pip install transformers`") from e
 
     cache_dir = str(HF_CACHE_DIR)
 
@@ -460,6 +458,9 @@ scored["sentiment_bin"] = scored["sentiment_score"].apply(_score_to_bin)
 # DATA INTEGRITY CHECKS
 # =========================================================================
 st.subheader("Data integrity checks")
+st.caption(
+    "QR rows = raw questionnaire-response rows, Observation rows = raw distance rows, QR submissions = grouped questionnaire submissions (per user/timestamp), and Matched submissions = submissions with an exact matching distance observation used for analysis."
+)
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
@@ -496,7 +497,7 @@ dist_hist = (
 )
 st.altair_chart(dist_hist, width="stretch")
 
-st.subheader("Raw sentiment score distribution (old formula: P(neg) - P(pos))")
+st.subheader("Raw sentiment score distribution (Formula: P(neg) - P(pos))")
 
 scored_raw_valid = scored.dropna(subset=["sentiment_score_raw"]).copy()
 
@@ -631,8 +632,8 @@ final_scatter = scatter + trend
 st.altair_chart(final_scatter, width="stretch")
 st.caption(
     "Scatter display note: for readability only, points with |sentiment_score| < 0.20 are "
-    "jittered vertically by a deterministic offset in [-0.05, +0.05]. "
-    "Tooltips show the raw (non-jittered) sentiment score."
+    "jittered vertically by a deterministic offset in [-0.05, +0.05]. This jitter is only for display and does not affect the actual sentiment_score values used in analysis."
+    ""
 )
 
 # Heatmap below
