@@ -9,6 +9,17 @@ import os
 import sys
 import re
 
+# Silence Hugging Face model loading progress/report noise in Streamlit logs.
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+try:
+    from transformers.utils import logging as hf_logging  # type: ignore
+
+    hf_logging.set_verbosity_error()
+except Exception:
+    # Keep app startup robust if transformers is unavailable at import time.
+    pass
+
 # Ensure the project root folder is in PYTHONPATH so imports from src/ work.
 CURRENT_DIR = os.path.dirname(__file__)
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
