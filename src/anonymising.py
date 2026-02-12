@@ -39,7 +39,7 @@ from __future__ import annotations
 import os
 import csv
 import argparse
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Ensure Transformers won't try to import TF/Flax paths
@@ -58,12 +58,33 @@ DEFAULT_MODEL = os.getenv(
     "Davlan/bert-base-multilingual-cased-ner-hrl",
 )
 
-# We don't force device_map; HF will pick MPS on Apple Silicon automatically.
-NER_PIPE = pipeline(
-    task="token-classification",
-    model=DEFAULT_MODEL,
-    aggregation_strategy="simple",  # group B-PER/I-PER into one span
-)
+_NER_MODEL_NAME = DEFAULT_MODEL
+_NER_PIPE: Any | None = None
+
+
+def _build_ner_pipeline(model_name: str):
+    """Create the PERSON NER pipeline for a given model name."""
+    # We don't force device_map; HF will pick MPS on Apple Silicon automatically.
+    return pipeline(
+        task="token-classification",
+        model=model_name,
+        aggregation_strategy="simple",  # group B-PER/I-PER into one span
+    )
+
+
+def _set_ner_model(model_name: str) -> None:
+    """Switch model and clear cache so the new model loads on next use."""
+    global _NER_MODEL_NAME, _NER_PIPE
+    _NER_MODEL_NAME = model_name
+    _NER_PIPE = None
+
+
+def _get_ner_pipeline():
+    """Lazily initialize and cache the NER pipeline."""
+    global _NER_PIPE
+    if _NER_PIPE is None:
+        _NER_PIPE = _build_ner_pipeline(_NER_MODEL_NAME)
+    return _NER_PIPE
 
 PERSON_TAGS = {"PER", "PERSON"}  # model-dependent tag names
 
@@ -119,9 +140,10 @@ def detect_person_spans(text: str) -> List[Tuple[int, int]]:
     """Return global char spans for PERSON entities across chunked text."""
     if not text:
         return []
+    ner_pipe = _get_ner_pipeline()
     spans: List[Tuple[int, int]] = []
     for base, chunk in _iter_char_chunks(text):
-        ents = NER_PIPE(chunk)
+        ents = ner_pipe(chunk)
         for ent in ents:
             group = (ent.get("entity_group") or ent.get("entity") or "").upper()
             if (group in PERSON_TAGS) or any(tag in group for tag in PERSON_TAGS):
@@ -214,14 +236,9 @@ def parse_args() -> argparse.Namespace:
 def main():
     args = parse_args()
 
-    # If a different model is passed via CLI, rebuild the pipeline once.
-    global NER_PIPE
+    # If a different model is passed via CLI, switch model and reload lazily.
     if args.model and args.model != DEFAULT_MODEL:
-        NER_PIPE = pipeline(
-            task="token-classification",
-            model=args.model,
-            aggregation_strategy="simple",
-        )
+        _set_ner_model(args.model)
 
     base_in = args.raw_dir
     base_out = args.out_dir

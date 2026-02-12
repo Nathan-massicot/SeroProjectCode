@@ -19,7 +19,7 @@ poetry --version
 #Clone repo 
 
 git clone <URL_DU_REPO>.git
-cd Sero_Project
+cd <PathYourProject>
 
 #Config env with poetry
 uv .venv --python 3.12 
