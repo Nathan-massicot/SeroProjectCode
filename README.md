@@ -8,7 +8,7 @@ Les données sont fournies sous forme de fichiers CSV (non versionnés dans ce r
 # 📦 Initialisation du projet
 
 ### 1. Prérequis
-- Python **3.12+**
+- Python **3.13+**
 - [Poetry 2.x](https://python-poetry.org/docs/#installation) (idéalement via `UV`)
 
 Vérifier l’installation :
@@ -19,14 +19,12 @@ poetry --version
 #Clone repo 
 
 git clone <URL_DU_REPO>.git
-cd SeroProjectCode
+cd Sero_Project
 
 #Config env with poetry
-
-poetry config virtualenvs.in-project true
-poetry env use python3.12
-poetry install
-
+uv .venv --python 3.12 
+uv activate sources/.venv
+uv sync 
 
 #Project structure 
 
@@ -38,5 +36,4 @@ SeroProjectCode/
 │── tests/               # Tests unitaires
 │── README.md            # Ce document
 │── pyproject.toml       # Définition de l'environnement Poetry
-│── poetry.lock          # Versions figées des dépendances
 │── .gitignore           # Exclusions (data/, venv/, etc.)
