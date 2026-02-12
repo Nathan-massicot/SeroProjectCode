@@ -314,7 +314,7 @@ def _score_to_bin(score: float) -> int:
 
 
 
-@st.cache_data
+@st.cache_data(scope="session", max_entries=1)
 def _build_submission_level_table(qr_df: pd.DataFrame) -> pd.DataFrame:
     """Aggregate questionnaire answers per submission (iduser + timestamp).
 
@@ -348,7 +348,7 @@ def _build_submission_level_table(qr_df: pd.DataFrame) -> pd.DataFrame:
     return agg
 
 
-@st.cache_data
+@st.cache_data(scope="session", max_entries=1)
 def _match_distance(submissions: pd.DataFrame, obs_df: pd.DataFrame) -> pd.DataFrame:
     """Match each questionnaire submission to an observation distance using exact (iduser, timestamp)."""
     obs = obs_df.copy()
@@ -369,7 +369,7 @@ def _match_distance(submissions: pd.DataFrame, obs_df: pd.DataFrame) -> pd.DataF
     return merged
 
 
-@st.cache_data
+@st.cache_data(scope="session", max_entries=1)
 def _compute_sentiment(df: pd.DataFrame, scoring_version: str = SENTIMENT_CACHE_VERSION) -> pd.DataFrame:
     """Compute sentiment scores for each submission_text."""
     _ = scoring_version  # Included to invalidate cache when scoring logic changes.
@@ -480,8 +480,11 @@ st.write(f"Exact match rate (questionnaire submission → distance): **{match_ra
 # =========================================================================
 st.subheader("Distance distribution (0 = close to crisis, 25 = safe)")
 
+# Keep only plotting columns before serializing data to the browser.
+obs_dist = observations[["distance"]].copy()
+
 dist_hist = (
-    alt.Chart(observations.dropna(subset=["distance"]))
+    alt.Chart(obs_dist.dropna(subset=["distance"]))
     .mark_bar()
     .encode(
         x=alt.X(
@@ -499,7 +502,7 @@ st.altair_chart(dist_hist, width="stretch")
 
 st.subheader("Raw sentiment score distribution (Formula: P(neg) - P(pos))")
 
-scored_raw_valid = scored.dropna(subset=["sentiment_score_raw"]).copy()
+scored_raw_valid = scored[["sentiment_score_raw"]].dropna().copy()
 
 sent_hist_raw = (
     alt.Chart(scored_raw_valid)
@@ -524,7 +527,7 @@ st.caption(
 
 st.subheader("Transformed sentiment score distribution (-1 = negative, 0 = neutral, 1 = positive)")
 
-scored_valid = scored.dropna(subset=["sentiment_score"]).copy()
+scored_valid = scored[["sentiment_score"]].dropna().copy()
 
 sent_hist = (
     alt.Chart(scored_valid)
@@ -562,7 +565,17 @@ st.caption("Correlation, scatter plot, and heatmap below use the transformed `se
 # =========================================================================
 st.subheader("Correlation between distance and sentiment")
 
-df_corr = scored.dropna(subset=["distance", "sentiment_score"]).copy()
+df_corr = scored[
+    [
+        "iduser",
+        "timestamp",
+        "distance",
+        "sentiment_score",
+        "sentiment_label",
+        "n_answers",
+        "text_len",
+    ]
+].dropna(subset=["distance", "sentiment_score"]).copy()
 
 st.write(
     "Interpretation: Negative sentiment tends to cluster at lower distance values (closer to crisis)."
@@ -579,7 +592,7 @@ df_corr_plot["sentiment_score_plot"] = df_corr_plot["sentiment_score"]
 neutral_cap = float(SENTIMENT_THRESHOLDS["neutral"][1])
 neutral_mask = df_corr_plot["sentiment_score"].abs() < neutral_cap
 if neutral_mask.any():
-    jitter_source = df_corr_plot.loc[neutral_mask, ["iduser", "timestamp", "submission_text"]].astype(str)
+    jitter_source = df_corr_plot.loc[neutral_mask, ["iduser", "timestamp"]].astype(str)
     jitter_hash = pd.util.hash_pandas_object(jitter_source, index=False).astype("uint64")
     jitter = ((jitter_hash % 10000).astype(float) / 10000.0 - 0.5) * 0.10
     df_corr_plot.loc[neutral_mask, "sentiment_score_plot"] = np.clip(

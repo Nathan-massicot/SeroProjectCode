@@ -43,6 +43,10 @@ st.set_page_config(
 
 NA_VALUES = ["", " ", "NA", "NaN", "null", "Null", "NULL", "None", "none"]
 
+# Privacy-first default: keep only anonymised exports in memory.
+# Set SERO_ALLOW_CLEAN_EXPORT=1 to re-enable clean (pre-anonymisation) exports.
+ALLOW_CLEAN_EXPORT = os.getenv("SERO_ALLOW_CLEAN_EXPORT", "0").strip().lower() in {"1", "true", "yes"}
+
 
 def create_zip_from_tables(tables_dict: dict, suffix: str) -> bytes:
     """Create an in-memory ZIP archive containing one CSV per table."""
@@ -54,6 +58,22 @@ def create_zip_from_tables(tables_dict: dict, suffix: str) -> bytes:
             zf.writestr(filename, csv_str)
     buf.seek(0)
     return buf.getvalue()
+
+
+def clear_loaded_data_state() -> None:
+    """Remove loaded dataset artifacts from the current Streamlit session."""
+    for key in (
+        "sero_data",
+        "data_loaded",
+        "cleaned_tables",
+        "anonymised_tables",
+        "clean_zip",
+        "anon_zip",
+    ):
+        st.session_state.pop(key, None)
+
+    st.session_state.sero_data = None
+    st.session_state.data_loaded = False
 
 
 def detect_delimiter_from_bytes(raw_bytes: bytes) -> str:
@@ -362,6 +382,10 @@ if st.session_state.data_loaded and st.session_state.sero_data is not None:
     st.success("Data already loaded ✅")
     st.write(f"Total interactions in dataset: **{len(data['all_interactions'])}**")
     st.write("You can open the **Analyse** page from the sidebar button or navigation.")
+    if st.button("Clear loaded data from memory", key="clear_loaded_data"):
+        clear_loaded_data_state()
+        st.success("Loaded data cleared from session memory.")
+        st.rerun()
 
 # ---------------------------------------------------------------------
 # EXPECTED FILES (FLEXIBLE MATCHING)
@@ -499,6 +523,7 @@ if st.button("Load anonymised files (skip anonymisation)", key="load_anonymised_
         st.error(msg)
     else:
         try:
+            clear_loaded_data_state()
             progress_bar = st.progress(0)
             status = st.empty()
             status.markdown("📦 Loading anonymised CSV files...")
@@ -531,12 +556,9 @@ if st.button("Load anonymised files (skip anonymisation)", key="load_anonymised_
             st.session_state.sero_data = data
             st.session_state.data_loaded = True
 
-            st.session_state.cleaned_tables = {k: v.copy(deep=True) for k, v in loaded.items()}
             st.session_state.anonymised_tables = {k: v.copy(deep=True) for k, v in loaded.items()}
 
-            clean_zip = create_zip_from_tables(st.session_state.cleaned_tables, "clean")
             anon_zip = create_zip_from_tables(st.session_state.anonymised_tables, "anonymised")
-            st.session_state.clean_zip = clean_zip
             st.session_state.anon_zip = anon_zip
 
             st.success("Anonymised data loaded successfully ✅")
@@ -555,6 +577,11 @@ if st.button("Load anonymised files (skip anonymisation)", key="load_anonymised_
 st.divider()
 
 st.subheader("Upload raw data Waiting time for processing may vary")
+if not ALLOW_CLEAN_EXPORT:
+    st.caption(
+        "Privacy mode is active: only anonymised exports are kept in session memory. "
+        "Set `SERO_ALLOW_CLEAN_EXPORT=1` to re-enable pre-anonymisation ZIP export."
+    )
 
 uploaded_files = st.file_uploader(
     "Select the 5 CSV files",
@@ -562,16 +589,16 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True,
 )
 
-# If ZIP files were already created in a previous run, always show download buttons
-# so the user can download both clean and anonymised CSVs even after a rerun.
-if "clean_zip" in st.session_state and "anon_zip" in st.session_state:
+# If ZIP files were already created in a previous run, show available download buttons.
+if "anon_zip" in st.session_state:
     st.subheader("Download processed CSV files")
-    st.download_button(
-        "⬇️ Download cleaned CSVs (before anonymisation)",
-        data=st.session_state.clean_zip,
-        file_name="sero_cleaned.zip",
-        mime="application/zip",
-    )
+    if ALLOW_CLEAN_EXPORT and "clean_zip" in st.session_state:
+        st.download_button(
+            "⬇️ Download cleaned CSVs (before anonymisation)",
+            data=st.session_state.clean_zip,
+            file_name="sero_cleaned.zip",
+            mime="application/zip",
+        )
     st.download_button(
         "⬇️ Download anonymised CSVs",
         data=st.session_state.anon_zip,
@@ -592,6 +619,7 @@ if st.button("Process uploaded files"):
         st.error(msg)
     else:
         try:
+            clear_loaded_data_state()
             uploaded_dict = {
                 "events": by_name["events"],
                 "careplan": by_name["careplan"],
@@ -618,13 +646,16 @@ if st.button("Process uploaded files"):
 
             st.session_state.sero_data = data
             st.session_state.data_loaded = True
-            st.session_state.cleaned_tables = cleaned_tables
             st.session_state.anonymised_tables = anonymised_tables
 
-            clean_zip = create_zip_from_tables(cleaned_tables, "clean")
             anon_zip = create_zip_from_tables(anonymised_tables, "anonymised")
 
-            st.session_state.clean_zip = clean_zip
+            if ALLOW_CLEAN_EXPORT:
+                st.session_state.cleaned_tables = cleaned_tables
+                st.session_state.clean_zip = create_zip_from_tables(cleaned_tables, "clean")
+            else:
+                st.session_state.pop("cleaned_tables", None)
+                st.session_state.pop("clean_zip", None)
             st.session_state.anon_zip = anon_zip
 
             st.success("Data cleaned, anonymised and processed successfully ✅")
