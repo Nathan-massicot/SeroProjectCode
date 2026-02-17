@@ -7,6 +7,16 @@ import os
 import warnings
 import hashlib
 
+try:
+    from sklearn.preprocessing import PolynomialFeatures, StandardScaler
+    from sklearn.pipeline import make_pipeline
+    from sklearn.linear_model import LinearRegression, Ridge
+    SKLEARN_AVAILABLE = True
+except Exception:
+    SKLEARN_AVAILABLE = False
+
+from scipy import stats
+
 # Suppress non-critical transformers warnings
 warnings.filterwarnings("ignore", message=".*position_ids.*")
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -600,7 +610,6 @@ if neutral_mask.any():
     )
 
 base_scatter = alt.Chart(df_corr_plot)
-base_trend = alt.Chart(df_corr)
 
 scatter = base_scatter.mark_circle(opacity=0.35, size=80).encode(
     x=alt.X(
@@ -625,32 +634,225 @@ scatter = base_scatter.mark_circle(opacity=0.35, size=80).encode(
     ],
 ).properties(height=380)
 
-# Add linear regression line
-trend = base_trend.transform_regression(
-    "distance", 
-    "sentiment_score",
-    method="linear",
-    as_=["distance", "predicted"]
-).mark_line(
-    color="#0066CC",
-    size=2,
-    opacity=0.8
-).encode(
-    x=alt.X("distance:Q", scale=alt.Scale(domain=[DIST_MIN, DIST_MAX], nice=False)),
-    y=alt.Y("predicted:Q", scale=alt.Scale(domain=[-1, 1]))
+LINEAR_COLOR = "#0066CC"
+QUAD_COLOR = "#CC4E00"
+QUAD_TRIM_PCT = 1.0
+QUAD_ALPHA = 0.5
+LINE_OPACITY = 0.85
+LINE_WIDTH = 2.5
+
+
+def _compute_fit_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
+    residuals = y_true - y_pred
+    mse = float(np.mean(np.square(residuals)))
+    mae = float(np.mean(np.abs(residuals)))
+    rmse = float(np.sqrt(mse))
+    ss_tot = float(np.sum(np.square(y_true - np.mean(y_true))))
+    ss_res = float(np.sum(np.square(residuals)))
+    r2 = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else np.nan
+    return {"mse": mse, "rmse": rmse, "mae": mae, "r2": r2}
+
+
+def _safe_variance(values: pd.Series | np.ndarray) -> float:
+    arr = np.asarray(values, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if arr.shape[0] <= 1:
+        return np.nan
+    return float(np.var(arr, ddof=1))
+
+
+def _quadratic_model_pvalue(x: np.ndarray, y: np.ndarray) -> float:
+    n_obs = x.shape[0]
+    n_params = 3  # intercept + x + x^2
+    if n_obs <= n_params:
+        return np.nan
+
+    x_design = np.column_stack([np.ones_like(x), x, np.square(x)])
+    beta = np.linalg.pinv(x_design.T @ x_design) @ x_design.T @ y
+    y_hat = x_design @ beta
+
+    rss = float(np.sum(np.square(y - y_hat)))
+    tss = float(np.sum(np.square(y - np.mean(y))))
+    dof_model = n_params - 1
+    dof_resid = n_obs - n_params
+    if tss <= 0 or dof_model <= 0 or dof_resid <= 0:
+        return np.nan
+    if rss <= 0:
+        return 0.0
+
+    ssr = max(0.0, tss - rss)
+    f_stat = (ssr / dof_model) / (rss / dof_resid)
+    return float(1.0 - stats.f.cdf(f_stat, dof_model, dof_resid))
+
+
+def _fmt(v: float, digits: int = 4) -> str:
+    return "n/a" if v is None or not np.isfinite(v) else f"{v:.{digits}f}"
+
+
+def _fmt_p(v: float) -> str:
+    if v is None or not np.isfinite(v):
+        return "n/a"
+    if v < 1e-4:
+        return "< 1e-4"
+    return f"{v:.4f}"
+
+
+x_grid = np.linspace(DIST_MIN, DIST_MAX, 300, dtype=float)
+
+# Linear model (OLS) on all available points
+linear_trend = None
+linear_metrics = None
+linear_reg_p = np.nan
+linear_pearson_r = np.nan
+linear_pearson_p = np.nan
+linear_var_distance = np.nan
+linear_var_sentiment = np.nan
+n_linear = len(df_corr)
+
+dataset_var_sentiment = _safe_variance(df_corr["sentiment_score"])
+class_var_negative = _safe_variance(
+    df_corr.loc[df_corr["sentiment_label"] == "negative", "sentiment_score"]
+)
+class_var_neutral = _safe_variance(
+    df_corr.loc[df_corr["sentiment_label"] == "neutral", "sentiment_score"]
+)
+class_var_positive = _safe_variance(
+    df_corr.loc[df_corr["sentiment_label"] == "positive", "sentiment_score"]
 )
 
-final_scatter = scatter + trend
+if n_linear >= 3:
+    x_linear = df_corr["distance"].to_numpy(dtype=float)
+    y_linear = df_corr["sentiment_score"].to_numpy(dtype=float)
 
-st.altair_chart(final_scatter, width="stretch")
+    if SKLEARN_AVAILABLE:
+        linear_model = make_pipeline(
+            PolynomialFeatures(degree=1, include_bias=False),
+            LinearRegression(),
+        )
+        linear_model.fit(x_linear.reshape(-1, 1), y_linear)
+        y_linear_fit = linear_model.predict(x_linear.reshape(-1, 1))
+        y_linear_grid = linear_model.predict(x_grid.reshape(-1, 1))
+    else:
+        linear_coeffs = np.polyfit(x_linear, y_linear, deg=1)
+        y_linear_fit = np.polyval(linear_coeffs, x_linear)
+        y_linear_grid = np.polyval(linear_coeffs, x_grid)
+    linear_metrics = _compute_fit_metrics(y_linear, y_linear_fit)
+    if n_linear > 1:
+        linear_var_distance = float(np.var(x_linear, ddof=1))
+        linear_var_sentiment = float(np.var(y_linear, ddof=1))
+
+    if np.unique(x_linear).shape[0] > 1:
+        lin_res = stats.linregress(x_linear, y_linear)
+        linear_reg_p = float(lin_res.pvalue)
+        linear_pearson_r, linear_pearson_p = stats.pearsonr(x_linear, y_linear)
+
+    linear_df = pd.DataFrame(
+        {"distance": x_grid, "predicted": np.clip(y_linear_grid, -1.0, 1.0)}
+    )
+    linear_trend = (
+        alt.Chart(linear_df)
+        .mark_line(color=LINEAR_COLOR, size=LINE_WIDTH, opacity=LINE_OPACITY)
+        .encode(
+            x=alt.X("distance:Q", scale=alt.Scale(domain=[DIST_MIN, DIST_MAX], nice=False)),
+            y=alt.Y("predicted:Q", scale=alt.Scale(domain=[-1, 1])),
+        )
+    )
+
+# Quadratic model (Ridge L2 alpha=0.5) with 1% trimming
+df_quad = df_corr.copy()
+if not df_quad.empty:
+    q_low = float(df_quad["sentiment_score"].quantile(QUAD_TRIM_PCT / 100.0))
+    q_high = float(df_quad["sentiment_score"].quantile(1.0 - QUAD_TRIM_PCT / 100.0))
+    df_quad = df_quad[df_quad["sentiment_score"].between(q_low, q_high)].copy()
+
+quad_trend = None
+quad_metrics = None
+quad_reg_p = np.nan
+quad_pearson_r = np.nan
+quad_pearson_p = np.nan
+quad_var_distance = np.nan
+quad_var_sentiment = np.nan
+n_quad = len(df_quad)
+
+if n_quad >= 4:
+    x_quad = df_quad["distance"].to_numpy(dtype=float)
+    y_quad = df_quad["sentiment_score"].to_numpy(dtype=float)
+
+    if SKLEARN_AVAILABLE:
+        quad_model = make_pipeline(
+            PolynomialFeatures(degree=2, include_bias=False),
+            StandardScaler(),
+            Ridge(alpha=QUAD_ALPHA),
+        )
+        quad_model.fit(x_quad.reshape(-1, 1), y_quad)
+        y_quad_fit = quad_model.predict(x_quad.reshape(-1, 1))
+        y_quad_grid = quad_model.predict(x_grid.reshape(-1, 1))
+    else:
+        quad_coeffs = np.polyfit(x_quad, y_quad, deg=2)
+        y_quad_fit = np.polyval(quad_coeffs, x_quad)
+        y_quad_grid = np.polyval(quad_coeffs, x_grid)
+
+    quad_metrics = _compute_fit_metrics(y_quad, y_quad_fit)
+    if n_quad > 1:
+        quad_var_distance = float(np.var(x_quad, ddof=1))
+        quad_var_sentiment = float(np.var(y_quad, ddof=1))
+    if np.unique(x_quad).shape[0] > 1:
+        quad_reg_p = _quadratic_model_pvalue(x_quad, y_quad)
+        quad_pearson_r, quad_pearson_p = stats.pearsonr(x_quad, y_quad)
+    quad_df = pd.DataFrame(
+        {"distance": x_grid, "predicted": np.clip(y_quad_grid, -1.0, 1.0)}
+    )
+    quad_trend = (
+        alt.Chart(quad_df)
+        .mark_line(color=QUAD_COLOR, size=LINE_WIDTH, opacity=LINE_OPACITY)
+        .encode(
+            x=alt.X("distance:Q", scale=alt.Scale(domain=[DIST_MIN, DIST_MAX], nice=False)),
+            y=alt.Y("predicted:Q", scale=alt.Scale(domain=[-1, 1])),
+        )
+    )
+
+linear_scatter = scatter if linear_trend is None else (scatter + linear_trend)
+quad_scatter = scatter if quad_trend is None else (scatter + quad_trend)
+
+col_lin, col_quad = st.columns(2)
+with col_lin:
+    st.markdown("**Linear regression (OLS)**")
+    st.altair_chart(linear_scatter, width="stretch")
+with col_quad:
+    st.markdown("**Quadratic regression (L2 Ridge, alpha=0.5, trim=1%)**")
+    st.altair_chart(quad_scatter, width="stretch")
+
 st.caption(
     "Scatter display note: for readability only, points with |sentiment_score| < 0.20 are "
-    "jittered vertically by a deterministic offset in [-0.05, +0.05]. This jitter is only for display and does not affect the actual sentiment_score values used in analysis."
-    ""
+    "jittered vertically by a deterministic offset in [-0.05, +0.05]. This jitter is only for display and does not affect analysis values."
+)
+if not SKLEARN_AVAILABLE:
+    st.warning(
+        "`scikit-learn` is unavailable, so the quadratic chart falls back to unregularized polynomial fit."
+    )
+
+stats_rows = [
+    {"Statistic": "N used", "Linear (OLS)": str(n_linear), "Quad L2 (trim 1%)": str(n_quad)},
+    {"Statistic": "MSE", "Linear (OLS)": _fmt(linear_metrics["mse"]) if linear_metrics else "n/a", "Quad L2 (trim 1%)": _fmt(quad_metrics["mse"]) if quad_metrics else "n/a"},
+    {"Statistic": "Dataset variance sentiment (all data)", "Linear (OLS)": _fmt(float(dataset_var_sentiment)), "Quad L2 (trim 1%)": _fmt(float(dataset_var_sentiment))},
+    {"Statistic": "Class variance sentiment: negative", "Linear (OLS)": _fmt(float(class_var_negative)), "Quad L2 (trim 1%)": _fmt(float(class_var_negative))},
+    {"Statistic": "Class variance sentiment: neutral", "Linear (OLS)": _fmt(float(class_var_neutral)), "Quad L2 (trim 1%)": _fmt(float(class_var_neutral))},
+    {"Statistic": "Class variance sentiment: positive", "Linear (OLS)": _fmt(float(class_var_positive)), "Quad L2 (trim 1%)": _fmt(float(class_var_positive))},
+    {"Statistic": "Variance distance (data)", "Linear (OLS)": _fmt(float(linear_var_distance)), "Quad L2 (trim 1%)": _fmt(float(quad_var_distance))},
+    {"Statistic": "Variance sentiment (data)", "Linear (OLS)": _fmt(float(linear_var_sentiment)), "Quad L2 (trim 1%)": _fmt(float(quad_var_sentiment))},
+    {"Statistic": "Pearson r", "Linear (OLS)": _fmt(float(linear_pearson_r)), "Quad L2 (trim 1%)": _fmt(float(quad_pearson_r))},
+    {"Statistic": "Pearson p-value", "Linear (OLS)": _fmt_p(float(linear_pearson_p)), "Quad L2 (trim 1%)": _fmt_p(float(quad_pearson_p))},
+]
+
+st.markdown("**Regression statistics (p-values and fit diagnostics)**")
+st.dataframe(pd.DataFrame(stats_rows), width="stretch", hide_index=True)
+st.caption(
+    "Les variances de dataset/classes sont calculées directement sur les données; "
+    "la `Regression p-value` est calculée par modèle (linéaire: test de pente, polynomiale: test global F du modèle quadratique)."
 )
 
 # Heatmap below
-st.subheader("Distance × Sentiment (25 bins)")
+st.subheader(" Heatmap : distance × sentiment (25 bins)")
 
 # Create 25 equal bins for distance (0-25)
 DIST_EDGES = np.linspace(DIST_MIN, DIST_MAX, 26)  # 26 edges for 25 bins

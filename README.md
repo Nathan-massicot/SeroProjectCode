@@ -37,3 +37,25 @@ SeroProjectCode/
 │── README.md            # Ce document
 │── pyproject.toml       # Définition de l'environnement Poetry
 │── .gitignore           # Exclusions (data/, venv/, etc.)
+
+## Regression validation report
+
+Automated regression robustness checks are available via:
+
+```bash
+uv run python src/validate_sentiment_regression.py
+```
+
+Useful options:
+
+```bash
+# Faster run on a subset
+uv run python src/validate_sentiment_regression.py --max-submissions 200 --perm-iterations 50 --bootstrap-iterations 100
+
+# If you already have a scored table (distance + sentiment_score)
+uv run python src/validate_sentiment_regression.py --scored-csv path/to/scored.csv
+```
+
+Outputs:
+- `reports/sentiment_validation_report.md`
+- `reports/sentiment_validation_report.json`
