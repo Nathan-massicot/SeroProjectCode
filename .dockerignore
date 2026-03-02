@@ -1,0 +1,38 @@
+# Exclude git metadata from Docker build context.
+.git
+# Exclude git attributes file from Docker build context.
+.gitattributes
+# Exclude gitignore from Docker build context.
+.gitignore
+
+# Exclude local virtual environments from Docker build context.
+.venv/
+# Exclude environment variable files from Docker build context.
+.env
+# Exclude local editor/macOS metadata from Docker build context.
+.DS_Store
+
+# Exclude Python bytecode caches from Docker build context.
+__pycache__/
+# Exclude compiled Python artifacts from Docker build context.
+*.py[cod]
+# Exclude package metadata artifacts from Docker build context.
+*.egg-info/
+
+# Exclude test and static-analysis caches from Docker build context.
+.pytest_cache/
+# Exclude mypy cache from Docker build context.
+.mypy_cache/
+# Exclude Ruff cache from Docker build context.
+.ruff_cache/
+# Exclude notebook checkpoints from Docker build context.
+.ipynb_checkpoints/
+
+# Exclude notebooks from production image build context.
+notebooks/
+# Exclude reports artifacts from Docker build context.
+reports/
+# Exclude sensitive runtime data from Docker build context.
+data/
+# Exclude devcontainer files from Docker build context.
+.devcontainer/

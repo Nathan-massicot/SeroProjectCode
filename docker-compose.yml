@@ -1,0 +1,61 @@
+# Compose specification version.
+name: sero-streamlit
+
+# Service definitions.
+services:
+  # Main Streamlit web service.
+  app:
+    # Build configuration for this service.
+    build:
+      # Build from current repository directory.
+      context: .
+      # Select the production stage from the multi-stage Dockerfile.
+      target: prod
+    # Name the resulting local image.
+    image: sero-streamlit:prod
+    # Name the running container explicitly.
+    container_name: sero-streamlit
+    # Restart automatically unless manually stopped.
+    restart: unless-stopped
+    # Load environment variables from file for easy handoff.
+    env_file:
+      - .env
+    # Runtime environment variables.
+    environment:
+      # Set application port with fallback to 8501.
+      PORT: ${PORT:-8501}
+      # Keep clean export disabled by default for privacy.
+      SERO_ALLOW_CLEAN_EXPORT: ${SERO_ALLOW_CLEAN_EXPORT:-0}
+      # Force model cache to persisted volume-backed directory.
+      HF_HOME: /home/app/.cache/sero_hf
+      # Force Hugging Face Hub cache to persisted volume-backed directory.
+      HF_HUB_CACHE: /home/app/.cache/sero_hf
+      # Force legacy Hugging Face cache variable to persisted volume-backed directory.
+      HUGGINGFACE_HUB_CACHE: /home/app/.cache/sero_hf
+      # Force Transformers cache to persisted volume-backed directory.
+      TRANSFORMERS_CACHE: /home/app/.cache/sero_hf
+    # Publish container port to host port.
+    ports:
+      # Map host port to container port (both configurable, default 8501).
+      - "${HOST_PORT:-8501}:${PORT:-8501}"
+    # Persist only model cache on disk across restarts/redeploys.
+    volumes:
+      # Named volume for Hugging Face model cache.
+      - sero_hf_cache:/home/app/.cache/sero_hf
+    # Container healthcheck for service monitoring and restart decisions.
+    healthcheck:
+      # Check Streamlit health endpoint on current configured port.
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:${PORT:-8501}/_stcore/health || exit 1"]
+      # Run healthcheck every 30 seconds.
+      interval: 30s
+      # Allow up to 5 seconds for each healthcheck request.
+      timeout: 5s
+      # Wait before first check to allow model/app startup.
+      start_period: 40s
+      # Mark container unhealthy after 3 consecutive failures.
+      retries: 3
+
+# Named volume definitions.
+volumes:
+  # Named volume storing downloaded Hugging Face models/cache.
+  sero_hf_cache:

@@ -1,61 +1,101 @@
 # 🧠 SeroProjectCode – Data Analysis Pipeline
 
-Projet d’analyse de données pour une application de prévention santé (planification et suivi d’utilisateurs, aide à la dépression).  
-Les données sont fournies sous forme de fichiers CSV (non versionnés dans ce repo).
+Data analysis for a health app.
 
----
+## Local Python setup
 
-# 📦 Initialisation du projet
+Prerequisites:
+- Python `3.12.x`
+- `uv`
 
-### 1. Prérequis
-- Python **3.13+**
-- [Poetry 2.x](https://python-poetry.org/docs/#installation) (idéalement via `UV`)
-
-Vérifier l’installation :
+Example:
 ```bash
 python3 --version
-poetry --version
-
-#Clone repo 
-
-git clone <URL_DU_REPO>.git
-cd <PathYourProject>
-
-#Config env with poetry
-uv .venv --python 3.12 
-uv activate sources/.venv
-uv sync 
-
-#Project structure 
-
-SeroProjectCode/
-│── data/                # Données brutes (non versionnées)
-│── data_sample/         # Exemples anonymisés
-│── notebooks/           # Notebooks exploratoires
-│── src/                 # Code source (pipeline, analyse)
-│── tests/               # Tests unitaires
-│── README.md            # Ce document
-│── pyproject.toml       # Définition de l'environnement Poetry
-│── .gitignore           # Exclusions (data/, venv/, etc.)
-
-## Regression validation report
-
-Automated regression robustness checks are available via:
-
-```bash
-uv run python src/validate_sentiment_regression.py
+uv sync
+uv run streamlit run Streamlit/Loading_Page.py
 ```
 
-Useful options:
+Local app URL:
+- `http://localhost:8501`
+
+## Docker
+
+### 1) Prepare environment file
 
 ```bash
-# Faster run on a subset
-uv run python src/validate_sentiment_regression.py --max-submissions 200 --perm-iterations 50 --bootstrap-iterations 100
-
-# If you already have a scored table (distance + sentiment_score)
-uv run python src/validate_sentiment_regression.py --scored-csv path/to/scored.csv
+cp .env.example .env
 ```
 
-Outputs:
-- `reports/sentiment_validation_report.md`
-- `reports/sentiment_validation_report.json`
+Edit `.env` if needed:
+- `HOST_PORT` public host port (default `8501`)
+- `PORT` container Streamlit port (default `8501`)
+- `SERO_ALLOW_CLEAN_EXPORT` default `0`
+
+### 2) Build production image (multi-stage target)
+
+```bash
+docker build --target prod -t sero-streamlit:prod .
+```
+
+### 3) Run with Docker Compose (recommended)
+
+```bash
+docker compose up -d --build
+```
+
+Open:
+- `http://localhost:${HOST_PORT}`
+
+### 4) Health verification
+
+```bash
+# Streamlit internal health endpoint
+curl -fsS "http://localhost:${HOST_PORT}/_stcore/health"
+
+# Compose service health status
+docker compose ps
+```
+
+### 5) Logs
+
+```bash
+docker compose logs -f app
+```
+
+## What is configured
+
+- Multi-stage Dockerfile with `dev` and `prod` targets.
+- `prod` runs as non-root user `app`.
+- Strict dependency install with `uv sync --frozen`.
+- Dynamic port support with `${PORT:-8501}`.
+- Healthcheck enabled on `/_stcore/health`.
+- Persistent Hugging Face model cache volume only.
+- Runtime-only files in image (`Streamlit/`, `src/`).
+- Sensitive data excluded from build context (`data/` in `.dockerignore`).
+
+## Deployment checklist (for server handoff)
+
+1. Confirm server architecture: `amd64` or `arm64`.
+2. Confirm runtime model: Docker Compose, Kubernetes, or managed platform.
+3. Confirm public exposure: direct port or reverse proxy + HTTPS.
+4. Set `.env` values (`HOST_PORT`, `PORT`, optional vars).
+5. Run `docker compose up -d --build`.
+6. Validate health endpoint and service status.
+7. Confirm model cache volume exists and persists between restarts.
+8. Confirm logs are collected from stdout/stderr.
+
+## Troubleshooting
+
+1. App not reachable:
+- Check `docker compose ps` and mapped `HOST_PORT`.
+- Check logs: `docker compose logs -f app`.
+
+2. Slow first startup:
+- First run downloads models.
+- Next runs reuse persisted `sero_hf_cache` volume.
+
+3. Port conflict:
+- Change `HOST_PORT` in `.env`, then restart Compose.
+
+4. Rebuild after dependency changes:
+- Update `pyproject.toml`/`uv.lock`, then run `docker compose up -d --build`.

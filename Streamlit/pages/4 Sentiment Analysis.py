@@ -847,8 +847,7 @@ stats_rows = [
 st.markdown("**Regression statistics (p-values and fit diagnostics)**")
 st.dataframe(pd.DataFrame(stats_rows), width="stretch", hide_index=True)
 st.caption(
-    "Les variances de dataset/classes sont calculées directement sur les données; "
-    "la `Regression p-value` est calculée par modèle (linéaire: test de pente, polynomiale: test global F du modèle quadratique)."
+    "Dataset/class variances are computed directly from the data; the Regression p-value is computed per model (linear: slope test, polynomial: global F-test of the quadratic model)."
 )
 
 # Heatmap below
