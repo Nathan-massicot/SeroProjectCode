@@ -254,12 +254,12 @@ def to_utc(series):
 
 def day_period_from_hour(h: int) -> str:
     """Split the day into 3 time blocks."""
-    if 5 <= h < 12:
+    if 6 <= h < 14:
         return "Morning"
-    elif 12 <= h < 18:
-        return "Afternoon"
+    elif 14 <= h < 22:
+        return "Afternoon/Evening"
     else:
-        return "Evening/Night"
+        return "Night"
 
 
 def add_time_features(df: pd.DataFrame, col: str) -> pd.DataFrame:

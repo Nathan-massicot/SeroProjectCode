@@ -26,7 +26,7 @@ all_interactions = data["all_interactions"]
 # for all visualisations on this page:
 # - date range
 # - sources (events, plans, observations, questionnaires)
-# - day period (Morning / Afternoon / Evening/Night)
+# - day period (Morning / Afternoon/Evening / Night)
 # - optional filter on a single anonymised user.
 with st.sidebar:
     st.header("Filters")
@@ -52,8 +52,8 @@ with st.sidebar:
     selected_sources = available_sources
     st.caption("All interaction sources are included in this page (no source filter applied).")
 
-    # Filter on part of the day (Morning / Afternoon / Evening/Night)
-    available_periods = ["Morning", "Afternoon", "Evening/Night"]
+    # Filter on part of the day (Morning / Afternoon/Evening / Night)
+    available_periods = ["Morning", "Afternoon/Evening", "Night"]
     selected_periods = st.multiselect(
         "Day periods",
         options=available_periods,
@@ -94,7 +94,7 @@ st.markdown(
 # This section answers:
 # - At which hours of the day SERO is used,
 # - On which weekdays interactions happen more often,
-# - How usage is distributed across Morning / Afternoon / Evening/Night.
+# - How usage is distributed across Morning / Afternoon/Evening / Night.
 st.header("1. Global usage – When are users mostly using the app?")
 
 col1, col2, col3 = st.columns(3)
@@ -146,10 +146,10 @@ chart_weekday = (
 st.altair_chart(chart_weekday, width="stretch")
 
 # c) Distribution of interactions by part of the day
-#    (Morning / Afternoon / Evening/Night)
-st.subheader("Distribution by day period (Morning / Afternoon / Evening/Night)")
+#    (Morning / Afternoon/Evening / Night)
+st.subheader("Distribution by day period (Morning / Afternoon/Evening / Night)")
 
-period_order = ["Morning", "Afternoon", "Evening/Night"]
+period_order = ["Morning", "Afternoon/Evening", "Night"]
 
 period_counts = (
     filtered_int["day_period"]
@@ -237,7 +237,7 @@ if len(qr_suicidal) > 0:
 
     st.altair_chart(chart_suicidal_weekday, width="stretch")
 
-    period_order = ["Morning", "Afternoon", "Evening/Night"]
+    period_order = ["Morning", "Afternoon/Evening", "Night"]
 
     suicidal_period = (
         qr_suicidal["day_period"]
@@ -321,13 +321,13 @@ pivot_events = (
     event_counts
     .pivot(index="day_period", columns="event_type", values="n")
     .fillna(0)
-    .reindex(index=["Morning", "Afternoon", "Evening/Night"])
+    .reindex(index=["Morning", "Afternoon/Evening", "Night"])
 )
 
 st.subheader("Events per day period and type")
 st.dataframe(pivot_events)
 
-period_order = ["Morning", "Afternoon", "Evening/Night"]
+period_order = ["Morning", "Afternoon/Evening", "Night"]
 
 pivot_long = (
     pivot_events

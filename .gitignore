@@ -191,3 +191,7 @@ data/normalized/
 #Report 
 Reports/
 #  Folder for storing generated reports
+
+#claude 
+CLAUDE.md 
+.claudeignore

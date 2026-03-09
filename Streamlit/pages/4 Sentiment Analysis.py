@@ -896,3 +896,232 @@ heatmap = (
 )
 
 st.altair_chart(heatmap, width="stretch")
+
+# =========================================================================
+# SENTIMENT BY TIME DIMENSIONS
+# =========================================================================
+
+# Derive time features from timestamp (same logic as Loading_Page)
+df_time = df_corr.copy()
+df_time["hour"] = df_time["timestamp"].dt.hour
+df_time["weekday"] = df_time["timestamp"].dt.day_name()
+df_time["month"] = df_time["timestamp"].dt.month
+df_time["season"] = df_time["month"].map({
+    12: "Winter", 1: "Winter", 2: "Winter",
+    3: "Spring", 4: "Spring", 5: "Spring",
+    6: "Summer", 7: "Summer", 8: "Summer",
+    9: "Autumn", 10: "Autumn", 11: "Autumn",
+})
+
+# ----- Scale toggle -----
+use_exp_scale = st.checkbox("Use exponential scale (amplifies small differences)", value=False)
+
+def _apply_exp_scale(df: pd.DataFrame, col: str = "mean_sentiment") -> pd.DataFrame:
+    """Apply sign-preserving exponential transform: sign(x) * (e^|x| - 1) / (e - 1)."""
+    out = df.copy()
+    if use_exp_scale:
+        vals = out[col].to_numpy(dtype=float)
+        out[col] = np.sign(vals) * (np.exp(np.abs(vals)) - 1.0) / (np.e - 1.0)
+    return out
+
+_y_title = "Mean sentiment score (exp scale)" if use_exp_scale else "Mean sentiment score"
+BAR_COLOR = "#1E88E5"
+
+
+def _group_stats_table(df: pd.DataFrame, group_col: str, value_col: str = "sentiment_score", group_order: list | None = None) -> None:
+    """Display a statistics table for sentiment grouped by a categorical column.
+
+    Shows per-group N/mean/std, plus ANOVA F-test and Kruskal-Wallis H-test.
+    """
+    with st.expander("Statistical analysis"):
+        groups = df.groupby(group_col, observed=True)[value_col]
+        group_list = [g.dropna().to_numpy() for _, g in groups]
+
+        # Per-group stats
+        agg = (
+            df.groupby(group_col, observed=True)[value_col]
+            .agg(["count", "mean", "std", "median"])
+            .reset_index()
+        )
+        agg.columns = [group_col, "N", "Mean", "Std", "Median"]
+        if group_order is not None:
+            order_map = {v: i for i, v in enumerate(group_order)}
+            agg["_order"] = agg[group_col].map(order_map)
+            agg = agg.sort_values("_order").drop(columns="_order")
+        for c in ["Mean", "Std", "Median"]:
+            agg[c] = agg[c].apply(lambda v: f"{v:.4f}" if pd.notna(v) else "n/a")
+
+        # Filter groups with >= 2 observations for statistical tests
+        valid_groups = [g for g in group_list if len(g) >= 2]
+
+        # ANOVA (one-way)
+        if len(valid_groups) >= 2:
+            f_stat, anova_p = stats.f_oneway(*valid_groups)
+        else:
+            f_stat, anova_p = np.nan, np.nan
+
+        # Kruskal-Wallis (non-parametric alternative)
+        if len(valid_groups) >= 2:
+            h_stat, kw_p = stats.kruskal(*valid_groups)
+        else:
+            h_stat, kw_p = np.nan, np.nan
+
+        # Overall stats
+        overall_n = int(df[value_col].notna().sum())
+        overall_mean = df[value_col].mean()
+        overall_std = df[value_col].std()
+
+        st.dataframe(agg, hide_index=True, width=600)
+
+        test_rows = [
+            {"Test": "Overall N", "Value": str(overall_n)},
+            {"Test": "Overall mean", "Value": f"{overall_mean:.4f}" if pd.notna(overall_mean) else "n/a"},
+            {"Test": "Overall std", "Value": f"{overall_std:.4f}" if pd.notna(overall_std) else "n/a"},
+            {"Test": "ANOVA F-statistic", "Value": _fmt(f_stat)},
+            {"Test": "ANOVA p-value", "Value": _fmt_p(anova_p)},
+            {"Test": "Kruskal-Wallis H", "Value": _fmt(h_stat)},
+            {"Test": "Kruskal-Wallis p-value", "Value": _fmt_p(kw_p)},
+        ]
+        st.dataframe(pd.DataFrame(test_rows), hide_index=True, width=600)
+        st.caption(
+            "ANOVA tests whether group means differ (assumes normality). "
+            "Kruskal-Wallis is the non-parametric equivalent (no normality assumption). "
+            "p < 0.05 suggests statistically significant differences between groups."
+        )
+
+# ----- Day period / weekend / season color mappings (shades of blue) -----
+# Day period (same as Loading_Page.py: day_period_from_hour)
+def _day_period(h: int) -> str:
+    if 6 <= h < 14:
+        return "Morning"
+    elif 14 <= h < 22:
+        return "Afternoon/Evening"
+    else:
+        return "Night"
+
+DAY_PERIOD_COLORS = {"Morning": "#90CAF9", "Afternoon/Evening": "#1E88E5", "Night": "#0D47A1"}
+WEEKEND_COLORS = {"Weekday": "#1E88E5", "Weekend": "#90CAF9"}
+SEASON_COLORS = {"Spring": "#90CAF9", "Summer": "#42A5F5", "Autumn": "#1E88E5", "Winter": "#0D47A1"}
+
+# ----- Hour of the day -----
+st.subheader("Sentiment score by hour of the day")
+
+df_time["day_period"] = df_time["hour"].apply(_day_period)
+
+hour_agg = (
+    df_time.groupby(["hour", "day_period"], observed=True)
+    .agg(
+        mean_sentiment=("sentiment_score", "mean"),
+        count=("sentiment_score", "size"),
+    )
+    .reset_index()
+)
+hour_agg = _apply_exp_scale(hour_agg)
+
+chart_hour = (
+    alt.Chart(hour_agg)
+    .mark_bar()
+    .encode(
+        x=alt.X("hour:O", title="Hour of the day"),
+        y=alt.Y("mean_sentiment:Q", title=_y_title, scale=alt.Scale(domain=[-1, 1])),
+        color=alt.Color(
+            "day_period:N",
+            title="Day period",
+            scale=alt.Scale(
+                domain=list(DAY_PERIOD_COLORS.keys()),
+                range=list(DAY_PERIOD_COLORS.values()),
+            ),
+        ),
+        tooltip=[
+            alt.Tooltip("hour:O", title="Hour"),
+            alt.Tooltip("day_period:N", title="Day period"),
+            alt.Tooltip("mean_sentiment:Q", title="Mean sentiment", format=".3f"),
+            alt.Tooltip("count:Q", title="Submissions"),
+        ],
+    )
+    .properties(height=320)
+)
+st.altair_chart(chart_hour, width="stretch")
+_group_stats_table(df_time, "hour")
+
+# ----- Day of the week -----
+st.subheader("Sentiment score by day of the week")
+
+weekday_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+df_time["day_type"] = df_time["weekday"].apply(lambda d: "Weekend" if d in ("Saturday", "Sunday") else "Weekday")
+
+weekday_agg = (
+    df_time.groupby(["weekday", "day_type"], observed=True)
+    .agg(
+        mean_sentiment=("sentiment_score", "mean"),
+        count=("sentiment_score", "size"),
+    )
+    .reset_index()
+)
+weekday_agg = _apply_exp_scale(weekday_agg)
+
+chart_weekday = (
+    alt.Chart(weekday_agg)
+    .mark_bar()
+    .encode(
+        x=alt.X("weekday:N", sort=weekday_order, title="Day of the week"),
+        y=alt.Y("mean_sentiment:Q", title=_y_title, scale=alt.Scale(domain=[-1, 1])),
+        color=alt.Color(
+            "day_type:N",
+            title="Day type",
+            scale=alt.Scale(
+                domain=list(WEEKEND_COLORS.keys()),
+                range=list(WEEKEND_COLORS.values()),
+            ),
+        ),
+        tooltip=[
+            alt.Tooltip("weekday:N", title="Day"),
+            alt.Tooltip("day_type:N", title="Day type"),
+            alt.Tooltip("mean_sentiment:Q", title="Mean sentiment", format=".3f"),
+            alt.Tooltip("count:Q", title="Submissions"),
+        ],
+    )
+    .properties(height=320)
+)
+st.altair_chart(chart_weekday, width="stretch")
+_group_stats_table(df_time, "weekday", group_order=weekday_order)
+
+# ----- Season -----
+st.subheader("Sentiment score by season")
+
+season_order = ["Spring", "Summer", "Autumn", "Winter"]
+
+season_agg = (
+    df_time.groupby("season", observed=True)
+    .agg(
+        mean_sentiment=("sentiment_score", "mean"),
+        count=("sentiment_score", "size"),
+    )
+    .reset_index()
+)
+season_agg = _apply_exp_scale(season_agg)
+
+chart_season = (
+    alt.Chart(season_agg)
+    .mark_bar()
+    .encode(
+        x=alt.X("season:N", sort=season_order, title="Season"),
+        y=alt.Y("mean_sentiment:Q", title=_y_title, scale=alt.Scale(domain=[-1, 1])),
+        color=alt.Color(
+            "season:N",
+            title="Season",
+            scale=alt.Scale(
+                domain=list(SEASON_COLORS.keys()),
+                range=list(SEASON_COLORS.values()),
+            ),
+        ),
+        tooltip=[
+            alt.Tooltip("season:N", title="Season"),
+            alt.Tooltip("mean_sentiment:Q", title="Mean sentiment", format=".3f"),
+            alt.Tooltip("count:Q", title="Submissions"),
+        ],
+    )
+    .properties(height=320)
+)
+st.altair_chart(chart_season, width="stretch")
+_group_stats_table(df_time, "season", group_order=season_order)
